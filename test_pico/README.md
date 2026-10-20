@@ -22,3 +22,26 @@ aansluiten van de pico:
 
 later kan de sensor eventueel worden vervangen door een waterlevel sensor als de calibratie goed gelukt is  
 de led kan worden vervangen door een relais bordje of eventueel in serie gezet worden.
+
+
+## versie2: wifi en mqtt
+
+in dit stuk heb ik de wifi en mqtt connectie toegevoegd.  
+wifi wordt bij het opstarten geconnecteerd en als die weg is gevallen of eerste connectie lukt niet zal hij met een interval opnieuw proberen connectie te maken.  
+  
+mqtt connectie wordt enkel gemaakt als de pomp niet draait en als er wifi connectie is.  
+data word ook gepublished met een instelbare interval( niet te laag zetten zodat je niet geblokt wordt door thingspeak zelf).  
+
+## settings.toml
+
+settings.toml file is mee toegevoegd met alle variabele die gebruikt worden.  
+comments staan bij de code waarvoor ze dienen.  
+eigen data invullen als je deze code wilt testen bij jou thuis.
+
+### extra's:
+
+heb alle variabelen bovenaan de file gezet onder de imports.  
+bij elke variabele die van belang is staat commentaar bij. 
+
+ 
+in geval dat er toch iets niet duidelijk is laat het me weten en dan pas ik het aan zolang de code nog niet gemerged is in main!!!

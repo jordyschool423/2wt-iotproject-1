@@ -1,0 +1,10 @@
+WIFI_SSID       = ""
+WIFI_PASSWORD   = ""        #eerste wifi blok gebruikt voor thuis netwerk
+#                           #2de blok is het schoolnetwerk
+# WIFI_SSID      = "IoTFactory"
+# WIFI_PASSWORD  = "only4iot"
+#
+THINGSPEAK_UNAME = ""       #vul hier je credentials in van je thingspeak channel en device
+THINGSPEAK_PASSWD = ""
+CLIENT_ID = ""
+CHAN_ID = ""
