@@ -5,8 +5,7 @@ automatisch bijvult. Deze module leest met twee sensoren het water niveau in de
 drinkbak en berekent daaruit het volume in mL.
 
 De gemeten data wordt later doorgestuurd naar de cloud, waar het op een platform
-gemonitord kan worden (uitgewerkt door een groepsgenoot — zie
-[Cloud integratie](#cloud-integratie-onder-ontwikkeling)).
+gemonitord kan worden 
 
 ## Hardware
 
