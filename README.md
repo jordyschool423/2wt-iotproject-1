@@ -14,9 +14,9 @@ Alle data zoals niveau's van de drinkbak, reserve reservoir, aantal keren gedron
 
 ## programmeren
 - [X] uitlezen van de niveau sensoren
-- [ ] uitlezingen in een formaat wegschrijven om door te sturen naar webapp
-- [ ] api voor communicatie tussen pi en webapp
-- [ ] aansturing van leds(of eventueel andere leuke manieren) om data op het model weer te geven
+- [x] uitlezingen in een formaat en doorsturen via mqtt
+- [ ] api voor communicatie tussen pi en webapp (niet nodig!!)
+- [ ] aansturing van leds(of eventueel andere leuke manieren) om data op het model weer te geven (bezig met oled scherm via spi: JW)
 
 
 ## eventuele ideeen
