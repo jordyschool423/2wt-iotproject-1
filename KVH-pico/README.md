@@ -4,8 +4,7 @@ Project voor het vak **IoT Essentials**: een drinkbak voor huisdieren die zichze
 automatisch bijvult. Deze module leest met twee sensoren het water niveau in de
 drinkbak en berekent daaruit het volume in mL.
 
-De gemeten data wordt later doorgestuurd naar de cloud, waar het op een platform
-gemonitord kan worden 
+De gemeten data wordt later doorgestuurd naar de cloud, waar het op thingspeak kan gemonitored worden en doorgestuurd worden naar Raspberry Pi 5. 
 
 ## Hardware
 

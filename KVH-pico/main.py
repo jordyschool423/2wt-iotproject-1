@@ -12,7 +12,14 @@ import board
 import digitalio
 import adafruit_hcsr04
 
-# Mediaan Library
+# Wifi imports
+import wifi
+import os
+import socketpool
+import ssl
+import adafruit_minimqtt.adafruit_minimqtt as MQTT
+
+# Median Library
 def median(data):
     """Return the median (middle value) of numeric data.
 
@@ -34,6 +41,85 @@ def median(data):
         i = n // 2
         return (data[i - 1] + data[i]) / 2
 
+
+#           -------------------------------
+#                Wifi connection Code
+#           -------------------------------
+
+connection_interval = 10
+last_try = -connection_interval    #initialisatie is -interval zodat hij connectie probeert te maken vanaf het moment dat hij gepowered word
+
+def wifi_connection():
+    global last_try               #global = variabele die buiten deze functie zich bevind, anders maakt hij er een nieuwe van
+    if wifi.radio.connected:
+        return
+
+    if time.monotonic() -last_try < connection_interval:   #time.monotonic is een klok die enkel opteld -> goed om tijdsverschillen in een programma te meten
+        return
+    
+    last_try = time.monotonic()       # moet voor de try anders voert die enkel uit bij een succes
+    try:
+        print("connecting to wifi")
+        wifi.radio.connect(os.getenv("WIFI_SSID"),os.getenv("WIFI_PASSWORD"),timeout= 10)   #timeout op 10 gezet, met 3 begonnen maar was te kort.
+        print(f"connected to wifi as {wifi.radio.ipv4_address}")
+    except(ConnectionError, TimeoutError) as e:
+        print("error",e)
+
+
+#           -------------------------------
+#                MQTT connection Code
+#           -------------------------------
+
+
+pool = socketpool.SocketPool(wifi.radio)
+mqtt_client = MQTT.MQTT(
+                                broker="mqtt3.thingspeak.com",
+                                username= os.getenv("THINGSPEAK_UNAME"),
+                                password=os.getenv("THINGSPEAK_PASSWD"),
+                                client_id=os.getenv("CLIENT_ID"),
+                                is_ssl= True,
+                                socket_pool=pool,
+                                ssl_context= ssl.create_default_context()   #ssl want anders word alles blijkbaar in plain text doorgestuurd
+                                )
+
+# MQTT connect function
+def connect_mqtt():
+    print("MQTT connection started")
+    if not wifi.radio.connected:
+        print("Wifi not connected")
+        return
+    if mqtt_client._is_connected:
+        print("MQTT already connected")
+        return
+    try:
+        print("connecting to MQTT broker")
+        mqtt_client.connect()
+        print("MQTT connection succesfull")
+    except Exception as e:
+        print(f"MQTT error: {e}")
+
+
+# MQTT publish function
+CHAN_ID = os.getenv("CHAN_ID")
+PUBLISH_TOPIC = f"channels/{CHAN_ID}/publish"
+
+publish_interval = 20
+last_publish = time.monotonic()
+
+def publish_volume(WLS_volume, US_volume, estimated_volume):
+    global last_publish
+    if time.monotonic() - last_publish > publish_interval:
+        last_publish = time.monotonic()
+        payload = f"field1={WLS_volume:.0f}&field2={US_volume:.0f}&field3={estimated_volume:.0f}"
+        try:
+            mqtt_client.publish(PUBLISH_TOPIC, payload)
+            print("published:", payload)
+        except Exception as e:
+            print("MQTT publish error:", e)
+            try:
+                mqtt_client.disconnect()
+            except Exception:
+                pass
 
 
 #           -------------------------------
@@ -201,6 +287,10 @@ def combined_volume(volume_wls, volume_us):
 try:
     while True:
         # loop start
+        wifi_connection()
+        if wifi.radio.connected and not mqtt_client.is_connected():
+            connect_mqtt()
+        
         input("Press Enter to read water level... (CTRL + C to stop)")
 
         # Water Level Sensor Reading
@@ -222,6 +312,10 @@ try:
         print("\n---Combined Volume Estimate---")
         combined = combined_volume(WLS_volume, US_volume)
         print("Combined Volume Estimate:", f"{combined:.0f}mL")
+
+        # Publish to MQTT
+        if wifi.radio.connected and mqtt_client.is_connected():
+            publish_volume(WLS_volume, US_volume, combined)
 
 # CTRL + C to stop the program
 except KeyboardInterrupt:
