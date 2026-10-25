@@ -1,33 +1,73 @@
-import board
+import os
 import time
+import threading
 import paho.mqtt.client as mqtt
 from dotenv import load_dotenv
 
-def on_connect(client, userdata, flags, rc, properties):
-    if rc==0:
-        print("Connected OK with result code "+str(rc))
-    else:
-        print("Bad connection with result code "+str(rc))
-
-def on_disconnect(client, userdata, flags, rc=0):
-    print("Disconnected result code "+str(rc))
-
-def on_message(client,userdata,msg):
-    print("Received a message on topic: " + msg.topic + "; message: " + msg.payload)
+import oled
 
 
+load_dotenv()
 
-# Set up a MQTT Client
-client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, MQTT_CLIENT_ID)
-client.username_pw_set(MQTT_USER, MQTT_PWD)
+# --- Setup ---
+HOST = os.getenv("MQTT_HOST")
+PORT = 8883
+CLIENT_ID = os.getenv("MQTT_CLIENT_ID")
+USERNAME = os.getenv("MQTT_UNAME")
+PASSWORD = os.getenv("MQTT_PASSWD")
+TOPIC = os.getenv("MQTT_TOPIC")
+
+# Shared global state (written by the MQTT thread, read by the main thread)
+last_message = None
 
 
-# Connect callback handlers to client
-client.on_connect= on_connect
-client.on_disconnect= on_disconnect
-client.on_message= on_message
+# --- MQTT callbacks ---
+def on_connect(client, userdata, flags, reason_code, properties):
+    print("Connected, result:", reason_code)
+    client.subscribe(TOPIC)
 
-21
-print("Attempting to connect to %s" % )
-client.connect(MQTT_HOST, MQTT_PORT)
-client.loop_start() #start the loop
+
+def on_message(client, userdata, message):
+    global last_message
+    last_message = message.payload.decode()
+    print(f"Received on {message.topic}: {last_message}")
+
+
+# --- MQTT client ---
+client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=CLIENT_ID)
+client.username_pw_set(USERNAME, PASSWORD)
+client.tls_set()
+client.on_connect = on_connect
+client.on_message = on_message
+
+
+# --- Thread task ---
+def task_mqtt():
+    """Keeps listening for MQTT messages (also reconnects if the connection drops)."""
+    print("MQTT thread started.")
+    client.loop_forever()
+    print("MQTT thread stopped.")
+
+
+# --- Main Execution ---
+client.connect(HOST, PORT)
+
+t1 = threading.Thread(target=task_mqtt, daemon=True)
+print("Starting threads...")
+t1.start()
+
+try:
+    counter = 0
+    while True:
+        # Main thread is free for other logic (sensors, LEDs, ...)
+        print(f"Main thread heart beat: {counter}, last message: {last_message}")
+        counter += 1
+        time.sleep(2)
+
+except KeyboardInterrupt:
+    print("\nStopping...")
+
+finally:
+    client.disconnect()  # makes loop_forever() return
+    t1.join()            # wait for the thread to finish
+    print("Done.")
