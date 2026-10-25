@@ -5,8 +5,7 @@ import json
 import paho.mqtt.client as mqtt
 from dotenv import load_dotenv
 
-# from .oled import *
-
+from oled import refresh_display, show_message, turn_off_display    #imports functie om oled aan te sturen
 
 load_dotenv()
 
@@ -22,12 +21,14 @@ TOPIC = os.getenv("MQTT_TOPIC").split(",")
 field1 = None
 field2 = None
 
+
 # --- MQTT callbacks ---
 def on_connect(client, userdata, flags, reason_code, properties):
     print("Connected, result:", reason_code)
     for topic in TOPIC:
-        print("Subscribing to:", repr(TOPIC))
-        client.subscribe(TOPIC)
+        print("Subscribing to:", repr(topic))
+        client.subscribe(topic)
+
 
 def on_message(client, userdata, message):
     global field1, field2
@@ -35,11 +36,12 @@ def on_message(client, userdata, message):
     field1 = data.get("field1")
     field2 = data.get("field2")
     print("field1:", field1, "| field2:", field2)
+    refresh_display(field1)
+    
 
 
 def on_subscribe(client, userdata, mid, reason_code_list, properties):
     print("Subscribe result:", reason_code_list)
-
 
 
 # --- MQTT client ---
@@ -51,7 +53,6 @@ client.on_message = on_message
 client.on_subscribe = on_subscribe
 
 
-
 # --- Thread task ---
 def task_mqtt():
     """Keeps listening for MQTT messages (also reconnects if the connection drops)."""
@@ -61,6 +62,7 @@ def task_mqtt():
 
 
 # --- Main Execution ---
+show_message("loading data")
 client.connect(HOST, PORT)
 
 t1 = threading.Thread(target=task_mqtt, daemon=True)
@@ -71,15 +73,15 @@ try:
     counter = 0
     while True:
         # Main thread is free for other logic (sensors, LEDs, ...)
-        print(f"Main thread heart beat: {counter}, last message: {field1,field2}")
+        print(f"Main thread heart beat: {counter}, last message: {field1, field2}")
         counter += 1
-
         time.sleep(2)
 
 except KeyboardInterrupt:
     print("\nStopping...")
 
 finally:
-    client.disconnect()  # makes loop_forever() return
-    t1.join()            # wait for the thread to finish
+    client.disconnect()     # makes loop_forever() return
+    t1.join()               # wait for the thread to finish
+    turn_off_display()      #shutdown of the oled       
     print("Done.")
