@@ -1,10 +1,11 @@
 import os
 import time
 import threading
+import json
 import paho.mqtt.client as mqtt
 from dotenv import load_dotenv
 
-import oled
+# from .oled import *
 
 
 load_dotenv()
@@ -15,22 +16,30 @@ PORT = 8883
 CLIENT_ID = os.getenv("MQTT_CLIENT_ID")
 USERNAME = os.getenv("MQTT_UNAME")
 PASSWORD = os.getenv("MQTT_PASSWD")
-TOPIC = os.getenv("MQTT_TOPIC")
+TOPIC = os.getenv("MQTT_TOPIC").split(",")
 
 # Shared global state (written by the MQTT thread, read by the main thread)
-last_message = None
-
+field1 = None
+field2 = None
 
 # --- MQTT callbacks ---
 def on_connect(client, userdata, flags, reason_code, properties):
     print("Connected, result:", reason_code)
-    client.subscribe(TOPIC)
-
+    for topic in TOPIC:
+        print("Subscribing to:", repr(TOPIC))
+        client.subscribe(TOPIC)
 
 def on_message(client, userdata, message):
-    global last_message
-    last_message = message.payload.decode()
-    print(f"Received on {message.topic}: {last_message}")
+    global field1, field2
+    data = json.loads(message.payload.decode())
+    field1 = data.get("field1")
+    field2 = data.get("field2")
+    print("field1:", field1, "| field2:", field2)
+
+
+def on_subscribe(client, userdata, mid, reason_code_list, properties):
+    print("Subscribe result:", reason_code_list)
+
 
 
 # --- MQTT client ---
@@ -39,6 +48,8 @@ client.username_pw_set(USERNAME, PASSWORD)
 client.tls_set()
 client.on_connect = on_connect
 client.on_message = on_message
+client.on_subscribe = on_subscribe
+
 
 
 # --- Thread task ---
@@ -60,8 +71,9 @@ try:
     counter = 0
     while True:
         # Main thread is free for other logic (sensors, LEDs, ...)
-        print(f"Main thread heart beat: {counter}, last message: {last_message}")
+        print(f"Main thread heart beat: {counter}, last message: {field1,field2}")
         counter += 1
+
         time.sleep(2)
 
 except KeyboardInterrupt:
