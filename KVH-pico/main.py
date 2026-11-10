@@ -11,6 +11,7 @@ import analogio
 import board
 import digitalio
 import adafruit_hcsr04
+import adafruit_rgbled
 
 # Wifi imports
 import wifi
@@ -106,11 +107,11 @@ PUBLISH_TOPIC = f"channels/{CHAN_ID}/publish"
 publish_interval = 20
 last_publish = time.monotonic()
 
-def publish_volume(WLS_volume, US_volume, estimated_volume):
+def publish_MQTT(WLS_volume, US_volume, estimated_volume, tank_distance):
     global last_publish
     if time.monotonic() - last_publish > publish_interval:
         last_publish = time.monotonic()
-        payload = f"field1={WLS_volume:.0f}&field2={US_volume:.0f}&field3={estimated_volume:.0f}"
+        payload = f"field1={WLS_volume:.0f}&field2={US_volume:.0f}&field3={estimated_volume:.0f}&field4={tank_distance:.0f}"
         try:
             mqtt_client.publish(PUBLISH_TOPIC, payload)
             print("published:", payload)
@@ -199,24 +200,24 @@ def voltage_to_volume(voltage):
 
 
 #           -------------------------------
-#               Ultrasonic Sensor Code
+#              Ultrasonic Sensor Code CUP
 #           -------------------------------
 #Before using the ultrasonic sensor, make sure to install the adafruit_hcsr04 library 
 #in your CircuitPython environment.
 
 
 # Set up the trigger and echo pins
-sonar = adafruit_hcsr04.HCSR04(trigger_pin=board.GP19, echo_pin=board.GP18)
+sonar_cup = adafruit_hcsr04.HCSR04(trigger_pin=board.GP19, echo_pin=board.GP18)
 
-def read_ultrasonic_distance():
+def read_ultrasonic_distance_cup():
     """
-    Reads the distance from the ultrasonic sensor.
+    Reads the distance from the ultrasonic sensor in the cup.
     Returns the distance in centimeters.
     """
     distanceList = []
     for _ in range(5):  # Read 5 times for stability
         try:
-            distanceList.append(sonar.distance)
+            distanceList.append(sonar_cup.distance)
         except RuntimeError:
             pass # skip failed reading
 
@@ -227,7 +228,7 @@ def read_ultrasonic_distance():
         
     return median(distanceList)  # Returns median distance in centimeters
 
-def distance_to_volume(distance):
+def distance_to_volume_cup(distance):
     """
     Converts the ultrasonic distance in cm to a volume in mL using
     linear interpolation between the calibration points.
@@ -269,6 +270,79 @@ def distance_to_volume(distance):
 
     return 0.0
 
+
+#           -------------------------------
+#              Ultrasonic Sensor Code TANK
+#           -------------------------------
+sonar_tank = adafruit_hcsr04.HCSR04(trigger_pin=board.GP15, echo_pin=board.GP14)
+
+max_high_distance = 15  # cm, distance when the tank is empty
+
+def read_ultrasonic_height_tank():
+    """
+    Reads the height of the water in the tank from the ultrasonic sensor.
+    Returns the height in centimeters.
+    """
+    distanceList = []
+    i = 0
+    for _ in range(5):  # Read 5 times for stability
+        i += 1
+        try:
+            distanceList.append(sonar_tank.distance)
+        except RuntimeError:
+            print(f"Reading {i}: Ultrasonic sensor tank reading failed. Skipping this reading.")
+            pass # skip failed reading
+
+        time.sleep(0.1)  # Short delay between readings
+
+        if not distanceList:  # If all readings failed, return a default value
+            return None
+        
+    # Returns median height in centimeters water remaining (15 cm is the max height when empty)
+    result = max_high_distance - median(distanceList)
+    if result < 0:
+        return 0
+    else:
+        return result
+
+
+#           -------------------------------
+#                 LED Indicator Code
+#           -------------------------------
+
+
+# Define LED thresholds for the tank's water level
+LED_yellow_light_treshold = 10  # cm
+LED_red_light_treshold = 5      # cm
+
+# Set up LED pins
+
+led = adafruit_rgbled.RGBLED(board.GP4, board.GP2, board.GP3)
+
+red_color = 255
+green_color = 0
+blue_color = 0
+    
+
+def led_tank_water_level(height):
+    """
+    Controls the LED indicators based on the water height in the tank.
+    - Green LED: Water level is above 10cm height. (safe level)
+    - Yellow LED: Water level is between 5cm and 10cm height. (warning level)
+    - Red LED: Water level is below 5cm height. (critical level)
+    """
+    print(f"LED Control: Water height = {height:.0f} cm")
+    if height > LED_yellow_light_treshold:
+        led.color = (0, 0, 255)  # Green
+    elif height > LED_red_light_treshold:
+        led.color = (255, 0, 150)  # Yellow
+    elif height >= 0:
+        led.color = (255, 0, 0)  # Red
+    else:
+        led.color = (255, 255, 255)  # White (error state)
+        print("Error in LED control)")
+
+
 #           -------------------------------
 #                      Main loop
 #           -------------------------------
@@ -285,13 +359,19 @@ def combined_volume(volume_wls, volume_us):
 
 
 try:
+    # Default LED
+    led.color = (255, 255, 255)  # White (default state) 
     while True:
-        # loop start
+        # Loop start
+
+        # Wifi and MQTT connection
         wifi_connection()
         if wifi.radio.connected and not mqtt_client.is_connected():
             connect_mqtt()
+
         
         input("Press Enter to read water level... (CTRL + C to stop)")
+        # time.sleep(1)  # Wait for 1 second before reading sensors
 
         # Water Level Sensor Reading
         print("---Water Level Sensor Reading---")
@@ -301,11 +381,11 @@ try:
         WLS_volume = voltage_to_volume(voltage)
         print("Volume from WLS:", f"{WLS_volume:.0f}mL")
 
-        # Ultrasonic Sensor Reading
+        # Ultrasonic Sensor Reading cup
         print("\n---Ultrasonic Sensor Reading---")
-        distance = read_ultrasonic_distance()
+        distance = read_ultrasonic_distance_cup()
         print("Distance from Ultrasonic Sensor:", f"{distance:.2f}cm")
-        US_volume = distance_to_volume(distance)
+        US_volume = distance_to_volume_cup(distance)
         print("Volume from Ultrasonic Sensor:", f"{US_volume:.0f}mL")
 
         # Combined Volume Estimate
@@ -313,12 +393,20 @@ try:
         combined = combined_volume(WLS_volume, US_volume)
         print("Combined Volume Estimate:", f"{combined:.0f}mL")
 
+        # Tank Ultrasonic Sensor Reading
+        print("\n---Tank Ultrasonic Sensor Reading---")
+        tank_height = read_ultrasonic_height_tank()
+        print("Height water in tank:", f"{tank_height:.0f}cm")
+
         # Publish to MQTT
         if wifi.radio.connected and mqtt_client.is_connected():
-            publish_volume(WLS_volume, US_volume, combined)
+            publish_MQTT(WLS_volume, US_volume, combined, tank_height)
+
+        # LED Indicator Control
+        print("\n---LED Indicator Control---")
+        led_tank_water_level(tank_height)
+
 
 # CTRL + C to stop the program
 except KeyboardInterrupt:
     print("\nProgram stopped by user.")
-
-
