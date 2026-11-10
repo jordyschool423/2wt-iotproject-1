@@ -1,105 +1,86 @@
-import os
+#Base imports
 import time
 import threading
-import json
-import paho.mqtt.client as mqtt
-from dotenv import load_dotenv
 
+
+#File imports
 from camera import get_animal                                                                  #import om foto te maken en terug te sturen wat er aan het drinken is
 from oled import refresh_display, refresh_display_drinking, show_message, turn_off_display    #imports functie om oled aan te sturen
 
-load_dotenv()
+#global variables
+exit_event = threading.Event()  # Create an event to signal the thread to exit
+waterlevel_in_bowl = -1  # Placeholder for the water level in the bowl
+waterlevel_in_tank = -1  # Placeholder for the water level in the tank
+animal = None  # Placeholder for the animal drinking status
 
-# --- Setup ---
-HOST = os.getenv("MQTT_HOST")
-PORT = 8883
-CLIENT_ID = os.getenv("MQTT_CLIENT_ID")
-USERNAME = os.getenv("MQTT_UNAME")
-PASSWORD = os.getenv("MQTT_PASSWD")
-TOPIC = os.getenv("MQTT_TOPIC").split(",")
-
-# Shared global state (written by the MQTT thread, read by the main thread)
-field1 = None
-field2 = None
-
-
-# --- MQTT callbacks ---
-def on_connect(client, userdata, flags, reason_code, properties):
-    print("Connected, result:", reason_code)
-    for topic in TOPIC:
-        print("Subscribing to:", repr(topic))
-        client.subscribe(topic)
-
-
-def on_message(client, userdata, message):
-    global field1, field2
-    data = json.loads(message.payload.decode())
-    field1 = data.get("field1")
-    field2 = data.get("field2")
-    print("field1:", field1, "| field2:", field2)
-    refresh_display(field1)
-    return (field1)
+#Functions
+def check_animal_drinking(tank_volume):
+    """Check if an animal is drinking and change the display."""
+    while not exit_event.is_set():
+        if waterlevel_in_bowl <= 200 and not animal:
+            show_message("Someone is drinking!")
+            animal = get_animal()  
+            if animal:
+                refresh_display_drinking(f"{animal} is drinking")
+        elif waterlevel_in_bowl > 200:
+            animal = None   
+        time.sleep(1)  # Check every second 
     
+def get_pico_data():
+    """Get the water level data from the Pico script."""
+    global waterlevel_in_bowl, waterlevel_in_tank
+    while not exit_event.is_set():
+        # Placeholder for getting data from the Pico script
+        # Replace this with actual code to read from the Pico
+        waterlevel_in_bowl = 300  # Example value
+        waterlevel_in_tank = 45   # Example value
+        time.sleep(5)  # Update every 5 seconds
 
+def call_pump_to_fill_bowl():
+    """Call the pump to fill the bowl if the water level is low and no animal is drinking."""
 
-def on_subscribe(client, userdata, mid, reason_code_list, properties):
-    print("Subscribe result:", reason_code_list)
-
-
-# --- MQTT client ---
-client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=CLIENT_ID)
-client.username_pw_set(USERNAME, PASSWORD)
-client.tls_set()
-client.on_connect = on_connect
-client.on_message = on_message
-client.on_subscribe = on_subscribe
-
-
-# --- Thread task ---
-def task_mqtt():
-    """Keeps listening for MQTT messages (also reconnects if the connection drops)."""
-    print("MQTT thread started.")
-    client.loop_forever()
-    print("MQTT thread stopped.")
 
 
 # --- Main Execution ---
-show_message("loading data")
-client.connect(HOST, PORT)
+show_message("loading data...")
 
-t1 = threading.Thread(target=task_mqtt, daemon=True)
-print("Starting threads...")
-t1.start()
+get_pico_data()  # Get initial data from the Pico script
 
-waterlevel = field1
+#while loop to wait for valid water level data before starting the main loop and threads.
+while waterlevel_in_tank == -1 or waterlevel_in_bowl == -1:
+    print("Waiting for Pico data to be available...")  # Placeholder for waiting for Pico data
+    get_pico_data()  # Get data from the Pico script
+    time.sleep(1)
+
+#Threading 
+t1 = threading.Thread(target=check_animal_drinking, args=(waterlevel_in_tank), daemon=True)  # Create a thread for the get_animal function
+#t2 = threading.Thread(target=get_pico_data, daemon=True)  # Create a thread for the get_pico_data function
+
+t1.start()  # Start the thread to check for drinking animals continuously
+#t2.start()  # Start the thread to get the Pico data continuously
 
 try:
-    counter = 0
     while True:
-        # Main thread is free for other logic (sensors, LEDs, ...)
-        print(f"Main thread heart beat: {counter}, last message: {field1, field2}")
-        counter += 1
+        #check if animal is drinking, if not: update OLED (otherwise this would overwrite the message that an animal is drinking)
+        if waterlevel_in_bowl <= 200:
+            refresh_display(waterlevel_in_tank)  # Update the OLED with the water level in the tank
 
-        if waterlevel > 200:
-            animal = get_animal()
-            refresh_display_drinking(f"{animal} is drinking")
-        
+        #Call on pump to fill bowl if waterlevel is low and no animal is drinking
+        if waterlevel_in_bowl <= 10:
+            show_message("Filling bowl...")
+            call_pump_to_fill_bowl()  # Call the pump to fill the bowl
+            time.sleep(5)  # Simulate time taken to fill the bowl
+            new_waterlevel_in_bowl = 500  # Placeholder for new water level after filling
+            refresh_display(new_waterlevel_in_bowl)  # Update the OLED with the new water level in the bowl
 
-
-
-
-
-
-
-4
-
-        time.sleep(2)
+        time.sleep(10)
 
 except KeyboardInterrupt:
-    print("\nStopping...")
+    print("\nStopped by user.")
 
 finally:
-    client.disconnect()     # makes loop_forever() return
+    exit_event.set()  # Signal the thread to exit
     t1.join()               # wait for the thread to finish
+    #t2.join()               # wait for the thread to finish
     turn_off_display()      #shutdown of the oled       
-    print("Done.")
+    print("Program successfully terminated.")

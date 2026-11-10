@@ -30,8 +30,10 @@ def refresh_display(data):
     image = Image.new("1", (oled.width, oled.height))
     draw = ImageDraw.Draw(image)
 
+    string_data = str(data) + "mL"
+    
     draw_centered(draw, "waterlevel =", 4)   # top line
-    draw_centered(draw, str(data), 18)       # bottom line
+    draw_centered(draw, string_data, 18)       # bottom line
 
     oled.image(image)
     oled.show()
