@@ -44,6 +44,15 @@ def show_message(text):
     oled.image(image)
     oled.show()
 
+def refresh_display_drinking(data):
+    image = Image.new("1", (oled.width, oled.height))
+    draw = ImageDraw.Draw(image)
+
+    draw_centered(draw, str(data), 10)       # bottom line
+
+    oled.image(image)
+    oled.show()
+
 
 def turn_off_display():
     """Clear the screen and switch the OLED off."""
