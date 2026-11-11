@@ -1,17 +1,10 @@
-# CTRL + SHIFT + P for commando palet
-# Selecteer CircuitPython Serial Monitor -> Pico
-# CTRL + C to start terminal
-
-# CTRL-D to start program
-# CTRL-C to stop program
-
 # Library imports
 import time
-import analogio
 import board
 import digitalio
 import adafruit_hcsr04
 import adafruit_rgbled
+import busio
 
 # Wifi imports
 import wifi
@@ -89,13 +82,13 @@ def connect_mqtt():
     if not wifi.radio.connected:
         print("Wifi not connected")
         return
-    if mqtt_client._is_connected:
+    if mqtt_client.is_connected:
         print("MQTT already connected")
         return
     try:
         print("connecting to MQTT broker")
         mqtt_client.connect()
-        print("MQTT connection succesfull")
+        print("MQTT connection succesful")
     except Exception as e:
         print(f"MQTT error: {e}")
 
@@ -107,11 +100,11 @@ PUBLISH_TOPIC = f"channels/{CHAN_ID}/publish"
 publish_interval = 20
 last_publish = time.monotonic()
 
-def publish_MQTT(WLS_volume, US_volume, estimated_volume, tank_distance):
+def publish_MQTT(US_volume,tank_distance):
     global last_publish
     if time.monotonic() - last_publish > publish_interval:
         last_publish = time.monotonic()
-        payload = f"field1={WLS_volume:.0f}&field2={US_volume:.0f}&field3={estimated_volume:.0f}&field4={tank_distance:.0f}"
+        payload = f"field1={US_volume:.0f}&field2={tank_distance:.2f}"
         try:
             mqtt_client.publish(PUBLISH_TOPIC, payload)
             print("published:", payload)
@@ -124,87 +117,8 @@ def publish_MQTT(WLS_volume, US_volume, estimated_volume, tank_distance):
 
 
 #           -------------------------------
-#               Water Level Sensor Code
-#           -------------------------------
-
-# Use GPIO22 as a switch for the sensor
-# Set GPIO22 as output
-# Turn the power off
-current = digitalio.DigitalInOut(board.GP22)
-current.direction = digitalio.Direction.OUTPUT
-current.value = False  
-
-# Connect the sensor's analog input to A0
-# (outside the function, otherwise it will try to open it multiple times)
-waterlevel_sensor = analogio.AnalogIn(board.A0)
-
-
-# Function to read the water level
-def read_water_level():
-    """
-    Reads the water level from the sensor over 100 measurements
-    returns an average value
-    """
-    current.value = True  # Turn the power on
-    time.sleep(.05)  # Wait briefly for a stable reading
-    waterlevelList = []
-    for _ in range(100):  # Read 100 times (noise reduction)
-        waterlevelList.append(waterlevel_sensor.value)
-        time.sleep(0.002)  
-    current.value = False  # Turn the power off
-    return median(waterlevelList) #returns the median value (less sensitive to outliers)
-
-def water_level_to_voltage(water_level):
-    """
-    Converts the water level reading to voltage.
-    The water level is a 16-bit value (0-65535) from the sensor.
-    """
-    return (water_level / 65535) * 3.3  # Convert to voltage
-
-def voltage_to_volume(voltage):
-    """
-    Turns voltage into volume in mL using a linear interpolation between calibration points.
-    The calibration points are based on the following data:
-    | Voltage (V) | Volume (mL) |
-    |-------------|--------------|  
-        0.03            0.0
-        0.37            25.0
-        0.88            50.0
-        1.18            75.0
-        1.22            100.0
-        1.27            125.0
-    """
-    points = [
-        (0.03, 0.0),
-        (0.37, 25.0),
-        (0.88, 50.0),
-        (1.18, 75.0),
-        (1.22, 100.0),
-        (1.27, 125.0)
-    ]
-
-    if voltage <= points[0][0]:
-        return 0.0
-    if voltage >= points[-1][0]:
-        return points[-1][1]
-
-    for i in range(len(points) - 1):
-        v0, ml0 = points[i]
-        v1, ml1 = points[i+1]
-        if v0 <= voltage <= v1:
-            # Linear interpolation
-            ratio = (voltage - v0) / (v1 - v0)
-            return round(ml0 + ratio * (ml1 - ml0))
-    return 0.0
-
-
-
-#           -------------------------------
 #              Ultrasonic Sensor Code CUP
 #           -------------------------------
-#Before using the ultrasonic sensor, make sure to install the adafruit_hcsr04 library 
-#in your CircuitPython environment.
-
 
 # Set up the trigger and echo pins
 sonar_cup = adafruit_hcsr04.HCSR04(trigger_pin=board.GP19, echo_pin=board.GP18)
@@ -224,8 +138,8 @@ def read_ultrasonic_distance_cup():
 
         time.sleep(0.1)  # Short delay between readings
 
-        if not distanceList:  # If all readings failed, return a default value
-            return None
+    if not distanceList:  # If all readings failed, return a default value
+        return None
         
     return median(distanceList)  # Returns median distance in centimeters
 
@@ -246,12 +160,12 @@ def distance_to_volume_cup(distance):
     so the points are ordered from high distance (empty) to low distance (full).
     """
     points = [
-        (14.23, 0.0),
-        (13.28, 25.0),
-        (12.31, 50.0),
-        (11.01, 75.0),
-        (10.69, 100.0),
-        (10.37, 125.0)
+        (13.89, 0),
+        (12.94, 25),
+        (11.97, 50),
+        (10.67, 75),
+        (10.35, 100),
+        (10.03, 125)
     ]
 
     # Below the lowest calibration distance -> beaker is full
@@ -259,7 +173,7 @@ def distance_to_volume_cup(distance):
         return points[-1][1]
     # Above the highest calibration distance -> beaker is empty
     if distance >= points[0][0]:
-        return 0.0
+        return 0
 
     for i in range(len(points) - 1):
         d0, ml0 = points[i]
@@ -269,8 +183,7 @@ def distance_to_volume_cup(distance):
             ratio = (d0 - distance) / (d0 - d1)
             return round(ml0 + ratio * (ml1 - ml0))
 
-    return 0.0
-
+    return 0
 
 #           -------------------------------
 #              Ultrasonic Sensor Code TANK
@@ -306,24 +219,16 @@ def read_ultrasonic_height_tank():
     else:
         return result
 
-
 #           -------------------------------
 #                 LED Indicator Code
 #           -------------------------------
 
-
-# Define LED thresholds for the tank's water level
-LED_yellow_light_treshold = 10  # cm
-LED_red_light_treshold = 7      # cm
+LED_yellow_light_threshold = 10  # cm
+LED_red_light_threshold = 7      # cm
 
 # Set up LED pins
 
 led = adafruit_rgbled.RGBLED(board.GP4, board.GP3, board.GP2)
-
-red_color = 255
-green_color = 0
-blue_color = 0
-    
 
 def led_tank_water_level(height):
     """
@@ -332,23 +237,20 @@ def led_tank_water_level(height):
     - Yellow LED: Water level is between 5cm and 10cm height. (warning level)
     - Red LED: Water level is below 5cm height. (critical level)
     """
-    if height != None:
-        # print(f"LED Control: Water height = {height:.0f} cm")
-        if height > LED_yellow_light_treshold:
-            led.color = (0, 255, 0)  # Green
-        elif height > LED_red_light_treshold:
-            led.color = (255, 150, 0)  # Yellow
-        elif height >= 0:
-            led.color = (255, 0, 0)  # Red
-        else:
-            led.color = (255, 255, 255)  # White (error state)
-            # print("Error in LED control)")
+    # print(f"LED Control: Water height = {height:.0f} cm")
+    if height > LED_yellow_light_threshold:
+        led.color = (0, 255, 0)  # Green
+    elif height > LED_red_light_threshold:
+        led.color = (255, 150, 0)  # Yellow
+    elif height >= 0:
+        led.color = (255, 0, 0)  # Red
     else:
-        led.color = (150,0,255)     #mogelijks niet nodig maar crashte zonder
-
+        led.color = (255, 255, 255)  # White (error state)
+        # print("Error in LED control)")
+    
 
 #           -------------------------------
-#                    pump controll
+#                    pump control
 #           -------------------------------
 
 pump = digitalio.DigitalInOut(board.GP13)
@@ -358,11 +260,9 @@ pump.direction = digitalio.Direction.OUTPUT
 start_fill = 25
 # punt vanaf waar hij moet stoppen met vullen in cm
 stop_fill = 75
-
 #geeft waarde terug of pomp moet aanslaan of niet
 def set_pump(on_off):
     pump.value = on_off
-
 
 def next_state(volume, filling):
     if not filling and volume < start_fill:
@@ -374,89 +274,90 @@ def next_state(volume, filling):
     return filling
 
 #           -------------------------------
-#                      Main loop
+#                        I2C
 #           -------------------------------
 
-def combined_volume(volume_wls, volume_us):
-    """
-    Combines the two volume estimates.
-    Ultrasonic is more accurate at higher volumes, WLS at lower volumes,
-    so use a weighted average.
-    """
-    w_us = 0.75  # weight for the ultrasonic estimate
-    w_wls = 0.25  # weight for the WLS estimate
-    return round(w_us * volume_us + w_wls * volume_wls)
+def send_i2c():
+    if filling:                                     #checking data
+        i2c_data = 999
+    else:
+        i2c_data = US_volume
 
+    if not i2c.try_lock():                          #sending message
+        return
+    try:
+        i2c.writeto(PI_ADDR, i2c_data.to_bytes(2, "big"))
+    except OSError:
+        print("loss of data")
+        pass  # Pi not ready / no ACK, try again next loop
+    finally:
+        i2c.unlock()
+
+#           -------------------------------
+#                      Main loop
+#           -------------------------------
 filling = False
 set_pump(filling)
+#i2c = busio.I2C(board.GP11, board.GP10, frequency=100000)
+PI_ADDR = 0x42
+
+US_volume = 0
+
+# Default LED
+led.color = (255, 255, 255)  # White (default state) 
 
 while True:
     try:
         
-        # Default LED
-        led.color = (255, 255, 255)  # White (default state) 
-        while True:
-            # Loop start
-
-            # Wifi and MQTT connection
-            if not wifi.radio.connected:
-                wifi_connection()
-            if wifi.radio.connected and not mqtt_client.is_connected():
+        # Wifi and MQTT connection
+        if not filling:
+            wifi_connection()
+            if not mqtt_client.is_connected() and wifi.radio.connected:
                 connect_mqtt()
 
-            
-            # input("Press Enter to read water level... (CTRL + C to stop)")
-            # time.sleep(1)  # Wait for 1 second before reading sensors
+        # Ultrasonic Sensor Reading cup
+        distance = read_ultrasonic_distance_cup()
+        if distance is None:
+            print("cup sensor failed, pump off")
+            set_pump(False)
+            filling = False
+            time.sleep(1)
+            continue
+        else:
+            print("Distance from Ultrasonic Sensor:", f"{distance:.2f}cm")
+        
+        US_volume = distance_to_volume_cup(distance)
 
-            # Water Level Sensor Reading
-            # print("---Water Level Sensor Reading---")
-            water_level = read_water_level() #read water level from sensor
-            voltage = water_level_to_voltage(water_level)
-            # print("Voltage from WLS:", f"{voltage:.2f}V")
-            WLS_volume = voltage_to_volume(voltage)
-            # print("Volume from WLS:", f"{WLS_volume:.0f}mL")
+        # Tank Ultrasonic Sensor Reading
+        tank_height = read_ultrasonic_height_tank()
+        if tank_height is None:
+            print("tank sensor failed, pump off")
+            set_pump(False)
+            filling = False
+            time.sleep(1)
+            continue
+        
+        # Publish to MQTT
+        if wifi.radio.connected and mqtt_client.is_connected() and mqtt_ready:
+            publish_MQTT( US_volume, tank_height)
+        mqtt_ready = True
 
-            # Ultrasonic Sensor Reading cup
-            # print("\n---Ultrasonic Sensor Reading cup---")
-            distance = read_ultrasonic_distance_cup()
-            # print("Distance from Ultrasonic Sensor:", f"{distance:.2f}cm")
-            US_volume = distance_to_volume_cup(distance)
-            # print("Volume from Ultrasonic Sensor:", f"{US_volume:.0f}mL")
+        if tank_height != None:
+            led_tank_water_level(tank_height)
 
-            # Combined Volume Estimate
-            # print("\n---Combined Volume Estimate---")
-            combined = combined_volume(WLS_volume, US_volume)
-            # print("Combined Volume Estimate:", f"{combined:.0f}mL")
+        filling = next_state(US_volume,filling)
+        set_pump(filling)
 
-            # Tank Ultrasonic Sensor Reading
-            # print("\n---Tank Ultrasonic Sensor Reading---")
-            tank_height = read_ultrasonic_height_tank()
-            # if tank_height !=None:
-                # print("Height water in tank:", f"{tank_height:.0f}cm")
-            # else:
-            #     print("tank measurment not possible!")
-
-            # Publish to MQTT
-            if wifi.radio.connected and mqtt_client.is_connected():
-                publish_MQTT(WLS_volume, US_volume, combined, tank_height)
-
-            # LED Indicator Control
-            # print("\n---LED Indicator Control---")
-            if tank_height != None:
-                led_tank_water_level(tank_height)
-
-
-            filling = next_state(combined, filling)
-            set_pump(filling)
-            time.sleep(.5)
-
+        #send_i2c()
+        time.sleep(.5)
+                                                #errorhandeling
     except RuntimeError:
-        print("no measurment, retrying")
+        print("no measurement, retrying")
         set_pump(False)
         filling = False
         time.sleep(1)
         continue
 
-    # CTRL + C to stop the program
-    # except KeyboardInterrupt:
-    #     print("\nProgram stopped by user.")
+    except Exception:
+        set_pump(False)
+        filling = False
