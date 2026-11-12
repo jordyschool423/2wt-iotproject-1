@@ -1,6 +1,8 @@
 #Base imports
 import time
 import threading
+import board
+import busio
 
 
 #File imports
@@ -31,16 +33,22 @@ def check_animal_drinking(tank_volume):
             detection_done = False #reset the detection flag
             # print("Animal set to None")
         time.sleep(5)  # Check every 5 seconds
-    
+
+i2c = busio.I2C(board.SCL, board.SDA)  # GPIO 3 / GPIO 2
+
 def get_pico_data():
     """Get the water level data from the Pico script."""
     global waterlevel_in_bowl, waterlevel_in_tank
     while not exit_event.is_set():
-        # Placeholder for getting data from the Pico script
-        # Replace this with actual code to read from the Pico
-        waterlevel_in_bowl = 45  # Example value
-        waterlevel_in_tank = 100  # Example value
-        time.sleep(5)  # Update every 5 seconds
+        buf = bytearray(2)
+        while not i2c.try_lock():
+            pass
+        try:
+            i2c.readfrom_into(0x42, buf)
+        finally:
+            i2c.unlock()
+        return int.from_bytes(buf, "big")
+        time.sleep(1)  # Update every 5 seconds
 
 
 # --- Main Execution ---
