@@ -18,9 +18,10 @@ if os.path.exists(image):
 
 picam2 = Picamera2()
 picam2.configure(picam2.create_still_configuration())
-picam2.start()
+
 
 def get_animal():
+    picam2.start()
     picam2.capture_file(image)
     picam2.stop()
     print("Image captured and saved to " + image)
@@ -29,23 +30,22 @@ def get_animal():
     # model laden en de foto analyseren
     results = model(image, imgsz=640, verbose=False)[0]
 
+    animals = []
+    expected_animals = ["cat", "dog", "person"]
 
     # resultaten uitlezen
     if len(results.boxes) == 0:
         class_name = "no object"
         print("No objects detected.")
     else:
-        animals = []
-        expected_animals = ["cat", "dog", "person"]
         for box in results.boxes:
             confidence = box.conf[0].item()     #Confidence score of the detection
             class_id = int(box.cls[0].item())   #Class ID of the detection
             class_name = model.names[class_id]  #Name of the detected class
             print(f"Detected {class_name} with confidence {confidence*100:.0f}%")
             animals.append(class_name)
-        for animal in animals:
-            if animal in expected_animals:
-                return animal
+
+                
                 
     # result opslaan
     if os.path.exists(result):
@@ -61,4 +61,7 @@ def get_animal():
     if os.path.exists(image):
         os.remove(image)
         print("Image file removed after processing.")
-    return(class_name)
+
+    for animal in animals:
+        if animal in expected_animals:
+            return animal
