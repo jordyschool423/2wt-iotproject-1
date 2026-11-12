@@ -37,11 +37,6 @@ def get_pico_data():
         waterlevel_in_tank = 45   # Example value
         time.sleep(5)  # Update every 5 seconds
 
-def call_pump_to_fill_bowl():
-    """Call the pump to fill the bowl if the water level is low and no animal is drinking."""
-
-
-
 # --- Main Execution ---
 show_message("loading data...")
 
