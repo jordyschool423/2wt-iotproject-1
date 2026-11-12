@@ -16,6 +16,7 @@ animal = None  # Placeholder for the animal drinking status
 #Functions
 def check_animal_drinking(tank_volume):
     """Check if an animal is drinking and change the display."""
+    global animal
     while not exit_event.is_set():
         if waterlevel_in_bowl <= 200 and not animal:
             show_message("Someone is drinking!")
@@ -44,20 +45,19 @@ def call_pump_to_fill_bowl():
 # --- Main Execution ---
 show_message("loading data...")
 
-get_pico_data()  # Get initial data from the Pico script
+
+
+#Threading 
+t1 = threading.Thread(target=check_animal_drinking, args=(waterlevel_in_tank,), daemon=True)  # Create a thread for the get_animal function
+t2 = threading.Thread(target=get_pico_data, daemon=True)  # Create a thread for the get_pico_data function
+
+t1.start()  # Start the thread to check for drinking animals continuously
+t2.start()  # Start the thread to get the Pico data continuously
 
 #while loop to wait for valid water level data before starting the main loop and threads.
 while waterlevel_in_tank == -1 or waterlevel_in_bowl == -1:
     print("Waiting for Pico data to be available...")  # Placeholder for waiting for Pico data
-    get_pico_data()  # Get data from the Pico script
     time.sleep(1)
-
-#Threading 
-t1 = threading.Thread(target=check_animal_drinking, args=(waterlevel_in_tank), daemon=True)  # Create a thread for the get_animal function
-#t2 = threading.Thread(target=get_pico_data, daemon=True)  # Create a thread for the get_pico_data function
-
-t1.start()  # Start the thread to check for drinking animals continuously
-#t2.start()  # Start the thread to get the Pico data continuously
 
 try:
     while True:

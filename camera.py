@@ -34,17 +34,19 @@ def get_animal():
     if len(results.boxes) == 0:
         class_name = "no object"
         print("No objects detected.")
-    elif len(results.boxes) > 1:
-        class_name = "multiple objects"
-        print("Multiple objects detected.")
     else:
-        box = results.boxes[0]              #Get the first detected box
-        confidence = box.conf[0].item()     #Confidence score of the detection
-        class_id = int(box.cls[0].item())   #Class ID of the detection
-        class_name = model.names[class_id]  #Name of the detected class
-        print(f"Detected {class_name} with confidence {confidence*100:.0f}%")
-
-
+        animals = []
+        expected_animals = ["cat", "dog", "person"]
+        for box in results.boxes:
+            confidence = box.conf[0].item()     #Confidence score of the detection
+            class_id = int(box.cls[0].item())   #Class ID of the detection
+            class_name = model.names[class_id]  #Name of the detected class
+            print(f"Detected {class_name} with confidence {confidence*100:.0f}%")
+            animals.append(class_name)
+        for animal in animals:
+            if animal in expected_animals:
+                return animal
+                
     # result opslaan
     if os.path.exists(result):
         os.remove(result)
