@@ -59,11 +59,9 @@ def wifi_connection():
     except(ConnectionError, TimeoutError) as e:
         print("error",e)
 
-
 #           -------------------------------
 #                MQTT connection Code
 #           -------------------------------
-
 
 pool = socketpool.SocketPool(wifi.radio)
 mqtt_client = MQTT.MQTT(
@@ -78,12 +76,9 @@ mqtt_client = MQTT.MQTT(
 
 # MQTT connect function
 def connect_mqtt():
-    print("MQTT connection started")
-    if not wifi.radio.connected:
-        print("Wifi not connected")
-        return
+    # print("MQTT connection started")
     if mqtt_client.is_connected:
-        print("MQTT already connected")
+        # print("MQTT already connected")
         return
     try:
         print("connecting to MQTT broker")
@@ -114,7 +109,6 @@ def publish_MQTT(US_volume,tank_distance):
                 mqtt_client.disconnect()
             except Exception:
                 pass
-
 
 #           -------------------------------
 #              Ultrasonic Sensor Code CUP
@@ -150,22 +144,22 @@ def distance_to_volume_cup(distance):
     Calibration points (distance in cm, volume in mL):
     | Distance (cm) | Volume (mL) |
     |---------------|-------------|
-        14.23           0.0
-        13.28           25.0
-        12.31           50.0
-        11.01           75.0
-        10.69           100.0
-        10.37           125.0
+        13.57           0.0
+        13.23           25.0
+        12.87           50.0
+        12.42           75.0
+        11.53           100.0
+        11.19           125.0
     Note: distance is inversely related to volume (closer = more water),
     so the points are ordered from high distance (empty) to low distance (full).
     """
     points = [
-        (13.89, 0),
-        (12.94, 25),
-        (11.97, 50),
-        (10.67, 75),
-        (10.35, 100),
-        (10.03, 125)
+        (13.57, 0),
+        (13.23, 25),
+        (12.87, 50),
+        (12.42, 75),
+        (11.53, 100),
+        (11.19, 125)
     ]
 
     # Below the lowest calibration distance -> beaker is full
@@ -188,7 +182,7 @@ def distance_to_volume_cup(distance):
 #           -------------------------------
 #              Ultrasonic Sensor Code TANK
 #           -------------------------------
-sonar_tank = adafruit_hcsr04.HCSR04(trigger_pin=board.GP15, echo_pin=board.GP14)
+sonar_tank = adafruit_hcsr04.HCSR04(trigger_pin=board.GP16, echo_pin=board.GP17)
 
 max_high_distance = 15  # cm, distance when the tank is empty
 
@@ -209,8 +203,8 @@ def read_ultrasonic_height_tank():
 
         time.sleep(0.1)  # Short delay between readings
 
-        if not distanceList:  # If all readings failed, return a default value
-            return None
+    if not distanceList:  # If all readings failed, return a default value
+        return None
         
     # Returns median height in centimeters water remaining (15 cm is the max height when empty)
     result = max_high_distance - median(distanceList)
@@ -228,7 +222,7 @@ LED_red_light_threshold = 7      # cm
 
 # Set up LED pins
 
-led = adafruit_rgbled.RGBLED(board.GP4, board.GP3, board.GP2)
+led = adafruit_rgbled.RGBLED(board.GP27, board.GP26, board.GP22)
 
 def led_tank_water_level(height):
     """
@@ -248,12 +242,11 @@ def led_tank_water_level(height):
         led.color = (255, 255, 255)  # White (error state)
         # print("Error in LED control)")
     
-
 #           -------------------------------
 #                    pump control
 #           -------------------------------
 
-pump = digitalio.DigitalInOut(board.GP13)
+pump = digitalio.DigitalInOut(board.GP21)
 pump.direction = digitalio.Direction.OUTPUT
 
 # laagste punt van het glas(of vanaf waar hij moet beginnen met vullen) in cm
@@ -278,7 +271,7 @@ def next_state(volume, filling):
 #           -------------------------------
 
 def send_i2c():
-    if filling:                                     #checking data
+    if sonar_cup.distance< 6:                       #checking data
         i2c_data = 999
     else:
         i2c_data = US_volume
@@ -296,9 +289,10 @@ def send_i2c():
 #           -------------------------------
 #                      Main loop
 #           -------------------------------
+
 filling = False
 set_pump(filling)
-#i2c = busio.I2C(board.GP11, board.GP10, frequency=100000)
+i2c = busio.I2C(board.GP11, board.GP10, frequency=100000)
 PI_ADDR = 0x42
 
 US_volume = 0
@@ -308,7 +302,6 @@ led.color = (255, 255, 255)  # White (default state)
 
 while True:
     try:
-        
         # Wifi and MQTT connection
         if not filling:
             wifi_connection()
